@@ -8,6 +8,8 @@ https://napari.org/stable/plugins/guides.html?#readers
 import mrcfile
 import numpy as np
 
+from .mdoc import MDOC
+
 
 def napari_get_reader(path):
     """A basic implementation of a Reader contribution.
@@ -81,6 +83,7 @@ def reader_function(path):
     # load all files into array
     layer_data = []
     for _path in paths:
+        mdoc = MDOC(path + ".mdoc")
 
         # Read mrcfile as a memory mapped file
         data = mrcfile.mmap(_path, permissive=True).data
@@ -89,6 +92,28 @@ def reader_function(path):
         if data.dtype in [np.complex64, np.complex128]:
             layer_data.append((np.abs(data), {"name": "amplitude"}, layer_type))
             layer_data.append((np.angle(data), {"name": "phase"}, layer_type))
+        elif mdoc.montage and (
+            len(mdoc.piece_coords) == len(data)
+            or len(mdoc.aligned_piece_coords) == len(data)
+        ):
+            if len(mdoc.aligned_piece_coords) == len(data):
+                coords = mdoc.aligned_piece_coords
+            else:
+                coords = mdoc.piece_coords
+            coords = np.array(coords)[:, (1, 0)]
+            coords -= coords.min(axis=0)
+            stitched_data = np.zeros(
+                coords.max(axis=0) + data.shape[1:], dtype=data.dtype
+            )
+            for piece in range(len(data)):
+                yrange = slice(
+                    coords[piece][0], coords[piece][0] + data.shape[1]
+                )
+                xrange = slice(
+                    coords[piece][1], coords[piece][1] + data.shape[2]
+                )
+                stitched_data[yrange, xrange] = data[piece]
+            layer_data.append((stitched_data, add_kwargs, layer_type))
         else:
             layer_data.append((data, add_kwargs, layer_type))
 
